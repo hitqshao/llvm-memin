@@ -1740,6 +1740,9 @@ Specify the maximum alignment to enforce on pointers lacking an explicit alignme
 
 .. option:: -fmemory-profile, -fno-memory-profile
 
+Specify passes in llvm opt analysis
+.. option:: -memory-alloc
+
 Enable heap memory profiling
 
 .. option:: -fmerge-all-constants, -fno-merge-all-constants
