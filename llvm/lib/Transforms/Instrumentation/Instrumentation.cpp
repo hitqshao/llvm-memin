@@ -106,6 +106,7 @@ void llvm::initializeInstrumentation(PassRegistry &Registry) {
   initializeAddressSanitizerLegacyPassPass(Registry);
   initializeModuleAddressSanitizerLegacyPassPass(Registry);
   initializeMemProfilerLegacyPassPass(Registry);
+  //initializeMemAllocAnalysisPass(Registry);
   initializeModuleMemProfilerLegacyPassPass(Registry);
   initializeBoundsCheckingLegacyPassPass(Registry);
   initializeControlHeightReductionLegacyPassPass(Registry);

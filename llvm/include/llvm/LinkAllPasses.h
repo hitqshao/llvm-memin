@@ -46,6 +46,7 @@
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Instrumentation/BoundsChecking.h"
+#include "llvm/Transforms/Instrumentation/MemAllocAnalysis.h"
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
@@ -176,6 +177,7 @@ namespace {
       (void) llvm::createJumpThreadingPass();
       (void) llvm::createUnifyFunctionExitNodesPass();
       (void) llvm::createInstCountPass();
+      (void) llvm::createMemAllocAnalysis();
       (void) llvm::createConstantHoistingPass();
       (void) llvm::createCodeGenPreparePass();
       (void) llvm::createEntryExitInstrumenterPass();

@@ -71,6 +71,7 @@
 #include "llvm/Transforms/Instrumentation/HWAddressSanitizer.h"
 #include "llvm/Transforms/Instrumentation/InstrProfiling.h"
 #include "llvm/Transforms/Instrumentation/MemProfiler.h"
+#include "llvm/Transforms/Instrumentation/MemAllocAnalysis.h"
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
 #include "llvm/Transforms/Instrumentation/SanitizerCoverage.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
@@ -274,6 +275,11 @@ static void addMemProfilerPasses(const PassManagerBuilder &Builder,
                                  legacy::PassManagerBase &PM) {
   PM.add(createMemProfilerFunctionPass());
   PM.add(createModuleMemProfilerLegacyPassPass());
+}
+
+static void addMemAllocPasses(const PassManagerBuilder &Builder,
+                                 legacy::PassManagerBase &PM) {
+  PM.add(createMemAllocAnalysis());
 }
 
 static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
@@ -709,6 +715,9 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addMemProfilerPasses);
   }
 
+  PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible, addMemAllocPasses);
+  //PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0, addMemAllocPasses);
+
   if (LangOpts.Sanitize.has(SanitizerKind::LocalBounds)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addBoundsCheckingPass);
@@ -835,8 +844,11 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
   if (!CodeGenOpts.SampleProfileFile.empty())
     PMBuilder.PGOSampleUse = CodeGenOpts.SampleProfileFile;
 
+  //FPM.add(createMemAllocAnalysis());
+
   PMBuilder.populateFunctionPassManager(FPM);
   PMBuilder.populateModulePassManager(MPM);
+
 }
 
 static void setCommandLineOpts(const CodeGenOptions &CodeGenOpts) {

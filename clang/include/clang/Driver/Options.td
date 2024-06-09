@@ -1371,6 +1371,16 @@ def fmemory_profile_EQ : Joined<["-"], "fmemory-profile=">,
     Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<directory>">,
     HelpText<"Enable heap memory profiling and dump results into <directory>">;
 
+def nomemory_alloc: Flag<["-"], "nomemory_alloc">;
+def memory_alloc: Flag<["-"], "memory_alloc">,Flags<[NoXarchOption]>,
+    HelpText<"Memory Allocation Analysis">;
+
+//def memory_alloc_EQ : Joined<["-", "--"], "memory_alloc=">, Flags<[CC1Option, NoXarchOption]>,
+//  HelpText<"Memory Alloc Analysis.">;
+//def memory_alloc: Flag<["-", "--"], "memory_alloc">, Flags<[NoXarchOption]>,
+//  Alias<memory_alloc_EQ>, AliasArgs<["cwd"]>,
+//  HelpText<"Memory Alloc Analysis">;
+
 // Begin sanitizer flags. These should all be core options exposed in all driver
 // modes.
 let Flags = [CC1Option, CoreOption] in {

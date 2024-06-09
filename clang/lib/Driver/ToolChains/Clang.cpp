@@ -44,7 +44,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/TargetParser.h"
 #include "llvm/Support/YAMLParser.h"
-
+#include <iostream>
 using namespace clang::driver;
 using namespace clang::driver::tools;
 using namespace clang;
@@ -4356,6 +4356,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (MemProfArg &&
       !MemProfArg->getOption().matches(options::OPT_fno_memory_profile))
     MemProfArg->render(Args, CmdArgs);
+
+  if (Args.getLastArg(options::OPT_memory_alloc) || Args.hasArg(options::OPT_memory_alloc)) {
+    //std::cout << "mem alloc analysis is enabled" << std::endl;
+    CmdArgs.push_back("-newAllocAnalysis");
+    CmdArgs.push_back("-memAllocAnalysis");
+  }
 
   // Embed-bitcode option.
   // Only white-listed flags below are allowed to be embedded.
