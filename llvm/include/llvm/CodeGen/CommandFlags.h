@@ -127,6 +127,8 @@ bool getEmitCallSiteInfo();
 
 bool getEnableMachineFunctionSplitter();
 
+bool getEnableMemAllocAnalysis();
+
 bool getEnableDebugEntryValues();
 
 bool getPseudoProbeForProfiling();

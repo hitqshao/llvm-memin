@@ -791,6 +791,13 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
         HelperStaticRuntimes.push_back("memprof-preinit");
     }
+
+    /*
+    if (SanArgs.needsMemAllocRt() && SanArgs.linkRuntimes()) {
+      SharedRuntimes.push_back("memory_alloc");
+    }
+    */
+
     if (SanArgs.needsUbsanRt() && SanArgs.linkRuntimes()) {
       if (SanArgs.requiresMinimalRuntime())
         SharedRuntimes.push_back("ubsan_minimal");
@@ -834,6 +841,15 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("memprof_cxx");
   }
+
+  /*
+  if (!SanArgs.needsSharedRt() && SanArgs.needsMemAllocRt() &&
+      SanArgs.linkRuntimes()) {
+    StaticRuntimes.push_back("memory_alloc");
+    if (SanArgs.linkCXXRuntimes())
+      StaticRuntimes.push_back("memory_alloc_cxx");
+  }
+  */
 
   if (!SanArgs.needsSharedRt() && SanArgs.needsHwasanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("hwasan");
@@ -923,6 +939,12 @@ bool tools::addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
         CmdArgs.push_back("-Bdynamic");
     }
   }
+
+  /*
+  if (SanArgs.needsMemAllocRt()) {
+    CmdArgs.push_back("-memory-alloc");
+  }
+  */
 
   for (auto RT : SharedRuntimes)
     addSanitizerRuntime(TC, Args, CmdArgs, RT, true, false);

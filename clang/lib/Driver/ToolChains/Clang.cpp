@@ -4357,11 +4357,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       !MemProfArg->getOption().matches(options::OPT_fno_memory_profile))
     MemProfArg->render(Args, CmdArgs);
 
+
   if (Args.getLastArg(options::OPT_memory_alloc) || Args.hasArg(options::OPT_memory_alloc)) {
-    //std::cout << "mem alloc analysis is enabled" << std::endl;
-    CmdArgs.push_back("-newAllocAnalysis");
-    CmdArgs.push_back("-memAllocAnalysis");
+    std::cout << "mem alloc analysis is enabled" << std::endl;
+    //CmdArgs.push_back("-newAllocAnalysis");
+    CmdArgs.push_back("-memory-alloc");
   }
+
 
   // Embed-bitcode option.
   // Only white-listed flags below are allowed to be embedded.
@@ -5109,6 +5111,16 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
           << A->getAsString(Args) << TripleStr;
     }
   }
+
+
+  /*
+  if (Arg *A = Args.getLastArg(options::OPT_fmemory_alloc,
+                               options::OPT_fno_memory_alloc)) {
+    // This codegen pass to all targets.
+    if (A->getOption().matches(options::OPT_fmemory_alloc))
+        A->render(Args, CmdArgs);
+  }
+  */
 
   Args.AddLastArg(CmdArgs, options::OPT_finstrument_functions,
                   options::OPT_finstrument_functions_after_inlining,

@@ -56,6 +56,7 @@ class SanitizerArgs {
   // True if cross-dso CFI support if provided by the system (i.e. Android).
   bool ImplicitCfiRuntime = false;
   bool NeedsMemProfRt = false;
+  bool NeedsMemAllocRt= false;
 
 public:
   /// Parses the sanitizer arguments from an argument list.
@@ -64,6 +65,7 @@ public:
   bool needsSharedRt() const { return SharedRuntime; }
 
   bool needsMemProfRt() const { return NeedsMemProfRt; }
+  bool needsMemAllocRt() const { return NeedsMemAllocRt; }
   bool needsAsanRt() const { return Sanitizers.has(SanitizerKind::Address); }
   bool needsHwasanRt() const {
     return Sanitizers.has(SanitizerKind::HWAddress);

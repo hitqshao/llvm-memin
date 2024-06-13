@@ -871,6 +871,8 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
                                 options::OPT_fmemory_profile_EQ,
                                 options::OPT_fno_memory_profile, false);
 
+  NeedsMemAllocRt = Args.hasArg(options::OPT_memory_alloc);
+
   // Finally, initialize the set of available and recoverable sanitizers.
   Sanitizers.Mask |= Kinds;
   RecoverableSanitizers.Mask |= RecoverableKinds;

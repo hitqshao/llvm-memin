@@ -30,7 +30,7 @@
 #include "llvm/Transforms/Utils/LoopUtils.h"
 using namespace llvm;
 
-#define DEBUG_TYPE "memAllocAnalysis"
+#define DEBUG_TYPE "memory-alloc"
 
 STATISTIC(MemAllocAnalysisCounter, "Counts number of functions greeted");
 
@@ -65,7 +65,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
     Type *NewPtrTy  = Type::getInt8PtrTy(Context);
     FunctionType *LogNewTy = FunctionType::get(NewVoidTy, {NewSizeTy,NewElementTy, OpTypeTy, NewPtrTy}, false);
     //FunctionType *LogNewTy = FunctionType::get(NewVoidTy, {NewSizeTy,NewPtrTy}, false);
-    FunctionCallee LogNew = M->getOrInsertFunction("logMemAllocation", LogNewTy);
+    FunctionCallee LogNew = M->getOrInsertFunction("logNewAllocation", LogNewTy);
 
     ++MemAllocAnalysisCounter;
 
@@ -87,7 +87,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
         for (BasicBlock::iterator i = bb->begin(), ie=bb->end(); i != ie; ++i) {
             Instruction *Inst = &*i;
 
-            errs() << "Instruction: " << *Inst << "\n";
+            //errs() << "Instruction: " << *Inst << "\n";
 
             IRBuilder<> builder(Inst);
 
@@ -184,11 +184,40 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
 char MemAllocAnalysis::ID = 0;
 
-INITIALIZE_PASS_BEGIN(MemAllocAnalysis, "memAllocAnalysis",
-                    "MemAllocAnalysis for size and pointer", false, false)
-INITIALIZE_PASS_END(MemAllocAnalysis, "memAllocAnalysis",
+INITIALIZE_PASS(MemAllocAnalysis, "memory-alloc",
                     "MemAllocAnalysis for size and pointer", false, false)
 
 FunctionPass *llvm::createMemAllocAnalysis() {
   return new MemAllocAnalysis();
 }
+
+PreservedAnalyses MemAllocAnalysisNoLegacy::run(Function &F,
+                                             FunctionAnalysisManager &AM) {
+
+    errs() << "Now Memory Alloc Analysis Runs! " << "\n";
+
+    return PreservedAnalyses::all();
+}
+
+// Register the pass with a pass manager
+llvm::PassPluginLibraryInfo getMemAllocAnalysisNoLegacyInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "MemAllocAnalysis", LLVM_VERSION_STRING,
+          [](PassBuilder &PB) {
+            PB.registerPipelineParsingCallback(
+                [](StringRef Name, FunctionPassManager &FPM,
+                   ArrayRef<PassBuilder::PipelineElement>) {
+                  if (Name == "memory-alloc") {
+                    FPM.addPass(MemAllocAnalysisNoLegacy());
+                    return true;
+                  }
+                  return false;
+                });
+          }};
+}
+
+// Export the pass registration function
+extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
+llvmGetPassPluginInfo() {
+  return getMemAllocAnalysisNoLegacyInfo();
+}
+

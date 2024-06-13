@@ -91,6 +91,7 @@ CGOPT(bool, EnableStackSizeSection)
 CGOPT(bool, EnableAddrsig)
 CGOPT(bool, EmitCallSiteInfo)
 CGOPT(bool, EnableMachineFunctionSplitter)
+CGOPT(bool, EnableMemAllocAnalysis)
 CGOPT(bool, EnableDebugEntryValues)
 CGOPT(bool, PseudoProbeForProfiling)
 CGOPT(bool, ValueTrackingVariableLocations)
@@ -459,6 +460,12 @@ codegen::RegisterCodeGenFlags::RegisterCodeGenFlags() {
       cl::init(false));
   CGBINDOPT(EnableMachineFunctionSplitter);
 
+  static cl::opt<bool> EnableMemAllocAnalysis(
+      "memory-alloc-ana",
+      cl::desc("memory allocation analysis"),
+      cl::init(false));
+  CGBINDOPT(EnableMemAllocAnalysis);
+
   static cl::opt<bool> ForceDwarfFrameSection(
       "force-dwarf-frame-section",
       cl::desc("Always emit a debug frame section."), cl::init(false));
@@ -558,6 +565,7 @@ codegen::InitTargetOptionsFromCodeGenFlags(const Triple &TheTriple) {
   Options.ExceptionModel = getExceptionModel();
   Options.EmitStackSizeSection = getEnableStackSizeSection();
   Options.EnableMachineFunctionSplitter = getEnableMachineFunctionSplitter();
+  Options.EnableMemAllocAnalysis = getEnableMemAllocAnalysis();
   Options.EmitAddrsig = getEnableAddrsig();
   Options.EmitCallSiteInfo = getEmitCallSiteInfo();
   Options.EnableDebugEntryValues = getEnableDebugEntryValues();

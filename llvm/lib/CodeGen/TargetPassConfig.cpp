@@ -22,6 +22,7 @@
 #include "llvm/Analysis/ScopedNoAliasAA.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/TypeBasedAliasAnalysis.h"
+#include "llvm/Transforms/Instrumentation/MemAllocAnalysis.h"
 #include "llvm/CodeGen/CSEConfigBase.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachinePassRegistry.h"
@@ -224,6 +225,11 @@ static cl::opt<bool> EnableMachineFunctionSplitter(
     "enable-split-machine-functions", cl::Hidden,
     cl::desc("Split out cold blocks from machine functions based on profile "
              "information."));
+
+/// Enable the machine function splitter pass.
+static cl::opt<bool> EnableMemAllocAnalysis(
+    "enable-memory-alloc", cl::Hidden,
+    cl::desc("enable memory alloc analysis"));
 
 /// Disable the expand reductions pass for testing.
 static cl::opt<bool> DisableExpandReductions(
@@ -850,6 +856,10 @@ void TargetPassConfig::addIRPasses() {
   addPass(createGCLoweringPass());
   addPass(createShadowStackGCLoweringPass());
   addPass(createLowerConstantIntrinsicsPass());
+
+
+  //if (EnableMemAllocAnalysis)
+    //addPass(createMemAllocAnalysis(), "\n\n*** Memory Analysis is added ***\n");
 
   // Make sure that no unreachable blocks are instruction selected.
   addPass(createUnreachableBlockEliminationPass());

@@ -541,6 +541,7 @@ static bool initTargetOptions(DiagnosticsEngine &Diags,
   }
 
   Options.EnableMachineFunctionSplitter = CodeGenOpts.SplitMachineFunctions;
+  Options.EnableMemAllocAnalysis = CodeGenOpts.MemAllocAnalysis;
   Options.FunctionSections = CodeGenOpts.FunctionSections;
   Options.DataSections = CodeGenOpts.DataSections;
   Options.IgnoreXCOFFVisibility = CodeGenOpts.IgnoreXCOFFVisibility;

@@ -47,6 +47,14 @@ public:
 // Insert MemAlloc instrumentation
 FunctionPass *createMemAllocAnalysis();
 
+
+class MemAllocAnalysisNoLegacy: public PassInfoMixin<MemAllocAnalysisNoLegacy> {
+public:
+    explicit MemAllocAnalysisNoLegacy() {};
+    PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+    static bool isRequired() { return true; }
+};
+
 } // namespace llvm
 
 #endif

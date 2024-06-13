@@ -177,7 +177,7 @@ namespace {
       (void) llvm::createJumpThreadingPass();
       (void) llvm::createUnifyFunctionExitNodesPass();
       (void) llvm::createInstCountPass();
-      (void) llvm::createMemAllocAnalysis();
+      //(void) llvm::createMemAllocAnalysis();
       (void) llvm::createConstantHoistingPass();
       (void) llvm::createCodeGenPreparePass();
       (void) llvm::createEntryExitInstrumenterPass();

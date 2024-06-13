@@ -1371,9 +1371,15 @@ def fmemory_profile_EQ : Joined<["-"], "fmemory-profile=">,
     Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<directory>">,
     HelpText<"Enable heap memory profiling and dump results into <directory>">;
 
-def nomemory_alloc: Flag<["-"], "nomemory_alloc">;
-def memory_alloc: Flag<["-"], "memory_alloc">,Flags<[NoXarchOption]>,
+def nomemory_alloc: Flag<["-"], "nomemory-alloc">;
+def memory_alloc: Flag<["-", "--"], "memory-alloc">, Flags<[CoreOption]>,
     HelpText<"Memory Allocation Analysis">;
+
+
+//defm memory_alloc: BoolFOption<"memory-alloc",
+//  CodeGenOpts<"MemAllocAnalysis">, DefaultFalse,
+//  PosFlag<SetTrue, [CC1Option], "Enable">, NegFlag<SetFalse, [], "Disable">,
+//  BothFlags<[], " enable memory alloc analysis">>;
 
 //def memory_alloc_EQ : Joined<["-", "--"], "memory_alloc=">, Flags<[CC1Option, NoXarchOption]>,
 //  HelpText<"Memory Alloc Analysis.">;
@@ -5056,7 +5062,6 @@ def main_file_name : Separate<["-"], "main-file-name">,
 def split_dwarf_output : Separate<["-"], "split-dwarf-output">,
   HelpText<"File name to use for split dwarf debug info output">,
   MarshallingInfoString<CodeGenOpts<"SplitDwarfOutput">>;
-
 }
 
 def fblocks_runtime_optional : Flag<["-"], "fblocks-runtime-optional">,
