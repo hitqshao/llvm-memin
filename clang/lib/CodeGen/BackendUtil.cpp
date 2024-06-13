@@ -716,6 +716,7 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addMemProfilerPasses);
   }
 
+  // TODO ADD option here to judge whether invoke mem allocate pass
   PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible, addMemAllocPasses);
   //PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0, addMemAllocPasses);
 
