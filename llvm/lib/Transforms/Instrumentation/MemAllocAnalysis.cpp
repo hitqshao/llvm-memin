@@ -80,6 +80,9 @@ MemAllocAnalysis::runOnFunction(Function &F) {
      * 5 new
      * 6 new []
      * 7 delete
+     * 8 malloc fortran
+     * 9 dealloc fortran
+     * 10 xalloc
      */
     uint64_t memOp = 0;
 
@@ -96,11 +99,27 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                 if (PrevInst) {
                     if ( auto *Call = dyn_cast<CallInst>(PrevInst)) {
+
+                        /*
+                        if (DILocation *Loc = PrevInst->getDebugLoc()) {
+                            unsigned Line = Loc->getLine();
+                            StringRef File = Loc->getFilename();
+                            StringRef Dir = Loc->getDirectory();
+                            errs() << "check allocation at " << Dir << "/" << File << ":" << Line << "\n";
+                        }
+                        */
+
+
                         Function *CalledFunc = Call->getCalledFunction();
+
+                        if (!CalledFunc)
+                            continue;
+
                         StringRef FuncName = CalledFunc->getName();
                         Type *DestType = BitCast->getDestTy();
                         Value *funcRet = Call;
-                        if (FuncName.equals("malloc") || FuncName.equals("calloc")) {
+                        if (FuncName.equals("malloc") || FuncName.equals("calloc") || FuncName.equals("xmalloc")
+                            || FuncName.startswith("_gfortran_internal_malloc")) {
                             if (PointerType *PtrType = dyn_cast<PointerType>(DestType)) {
                                 Type *ElementType = PtrType->getElementType();
 
@@ -108,18 +127,32 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                 // ElementType->isInt()
 
                                 uint64_t ElementSize = DL.getTypeAllocSize(ElementType);
-                                Value *SizeArg = Call->getArgOperand(0);
+                                Value *Arg0 = Call->getArgOperand(0);
 
+                                // malloc arg0 is allocate bytes
+                                // get return type with  for size of each element
+                                // calloc arg0 is number of elements
+                                //        arg1 is size of each element
 
                                 if (FuncName.equals("malloc")) {
                                     memOp = 1;
-                                } else {
+                                } else if (FuncName.equals("calloc")) {
                                     memOp = 2;
+                                } else if (FuncName.startswith("_gfortran_internal_malloc")) {
+                                    memOp = 8;
+                                } else if (FuncName.equals("xmalloc")) {
+                                    memOp = 10;
                                 }
 
-                                builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
+                                if (memOp == 2) {
+                                    Value *Arg1 = Call->getArgOperand(1);
+                                    builder.CreateCall(LogNew, {Arg0, Arg1, builder.getInt64(memOp), funcRet});
+                                } else {
+                                    builder.CreateCall(LogNew, {Arg0, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
+                                }
+
                             }
-                        } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam")) {
+                        } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_gfortran_internal_free")) {
                             // single and array
                             if (PointerType *PtrType = dyn_cast<PointerType>(DestType)) {
                                 Type *ElementType = PtrType->getElementType();
@@ -132,8 +165,10 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                                 if (FuncName.startswith("_Znwm")) {
                                     memOp = 5;
-                                } else {
+                                } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam")){
                                     memOp = 6;
+                                } else if (FuncName.startswith("_gfortran_internal_free")) {
+                                    memOp = 9;
                                 }
 
                                 builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
@@ -142,9 +177,23 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     }
                 }
             } else if (auto *Call = dyn_cast<CallInst>(Inst)) {
+
+                /*
+                if (DILocation *Loc = Inst->getDebugLoc()) {
+                    unsigned Line = Loc->getLine();
+                    StringRef File = Loc->getFilename();
+                    StringRef Dir = Loc->getDirectory();
+                    errs() << "check deallocation at " << Dir << "/" << File << ":" << Line << "\n";
+                }
+                */
+
                 Function *CalledFunc = Call->getCalledFunction();
+
+                if (!CalledFunc)
+                    continue;
+
                 StringRef FuncName = CalledFunc->getName();
-                if (FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free") {
+                if (FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free" || FuncName.startswith("_gfortran_internal_free")) {
                     // _ZdlPv -> operator delete(void*)
                     // _ZdaPv -> operator delete[](void*)
                     if (FuncName == "free")
@@ -153,29 +202,15 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         memOp = 7;
 
                     Value *SizeArg = Call->getArgOperand(0);
-                    builder.CreateCall(LogNew, {builder.getInt64(0), builder.getInt64(0), builder.getInt64(memOp), SizeArg});
+
+                    Type *ptrType = SizeArg->getType()->getPointerElementType();
+
+                    // Get the size of the object type
+                    uint64_t size = DL.getTypeAllocSize(ptrType);
+
+                    builder.CreateCall(LogNew, {builder.getInt64(size), builder.getInt64(0), builder.getInt64(memOp), SizeArg});
                 }
             }
-            /*
-            else if (auto *Call = dyn_cast<CallInst>(Inst)) {
-                Function *CalledFunc = Call->getCalledFunction();
-                StringRef FuncName = CalledFunc->getName();
-                //outs() << FuncName << "\n";
-                if (FuncName.equals("malloc") || FuncName.equals("calloc")) {
-                    Value *SizeArg = Call->getArgOperand(0);
-                    Value *MallocRet = Call;
-                    builder.CreateCall(LogMalloc, {SizeArg, MallocRet});
-                } else if (FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv")) {
-                    // _ZdlPv -> operator delete(void*)
-                    // _ZdaPv -> operator delete[](void*)
-                    if (FuncName.startswith("_ZdaPv")) {
-                    } else {
-                    }
-                } else if (FuncName == "free") {
-                    // free function
-                }
-            }
-            */
             }
         }
 
