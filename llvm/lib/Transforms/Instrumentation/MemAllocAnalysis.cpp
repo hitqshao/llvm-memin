@@ -28,6 +28,8 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
+#include "llvm/Demangle/Demangle.h"
+
 using namespace llvm;
 
 #define DEBUG_TYPE "memory-alloc"
@@ -73,16 +75,18 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
 
     /*
-     * 1 malloc
-     * 2 calloc
-     * 3 realloc
-     * 4 free
-     * 5 new
-     * 6 new []
-     * 7 delete
-     * 8 malloc fortran
-     * 9 dealloc fortran
-     * 10 xalloc
+     * 1    malloc
+     * 2    calloc
+     * 3    realloc
+     * 4    free
+     * 5    new
+     * 6    new [] char
+     * 7    delete
+     * 8    malloc fortran
+     * 9    dealloc fortran
+     * 10   xalloc
+     * 11   new [] int
+     * 12   delete []
      */
     uint64_t memOp = 0;
 
@@ -92,9 +96,10 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
             //errs() << "Instruction: " << *Inst << "\n";
 
-            IRBuilder<> builder(Inst);
-
             if (auto *BitCast = dyn_cast<BitCastInst>(Inst)) {
+
+                IRBuilder<> builder(Inst);
+
                 Instruction *PrevInst = Inst->getPrevNode();
 
                 if (PrevInst) {
@@ -118,6 +123,11 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         StringRef FuncName = CalledFunc->getName();
                         Type *DestType = BitCast->getDestTy();
                         Value *funcRet = Call;
+
+
+                        //std::string demangledName = demangle(FuncName.str().c_str());
+                        //errs() << "Found function call: " << demangledName << "\n";
+
                         if (FuncName.equals("malloc") || FuncName.equals("calloc") || FuncName.equals("xmalloc")
                             || FuncName.startswith("_gfortran_internal_malloc")) {
                             if (PointerType *PtrType = dyn_cast<PointerType>(DestType)) {
@@ -152,7 +162,8 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                 }
 
                             }
-                        } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_gfortran_internal_free")) {
+                        } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+
                             // single and array
                             if (PointerType *PtrType = dyn_cast<PointerType>(DestType)) {
                                 Type *ElementType = PtrType->getElementType();
@@ -163,12 +174,12 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                 uint64_t ElementSize = DL.getTypeAllocSize(ElementType);
                                 Value *SizeArg = Call->getArgOperand(0);
 
-                                if (FuncName.startswith("_Znwm")) {
-                                    memOp = 5;
-                                } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam")){
+                                if ( FuncName.startswith("_Znam")){
                                     memOp = 6;
-                                } else if (FuncName.startswith("_gfortran_internal_free")) {
-                                    memOp = 9;
+                                } else if (FuncName.startswith("_Znwm")) {
+                                    memOp = 5;
+                                } else if ( FuncName.startswith("_Znaj")){
+                                    memOp = 11;
                                 }
 
                                 builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
@@ -193,13 +204,22 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     continue;
 
                 StringRef FuncName = CalledFunc->getName();
+
+
                 if (FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free" || FuncName.startswith("_gfortran_internal_free")) {
+
+                    IRBuilder<> builder(Inst);
+
                     // _ZdlPv -> operator delete(void*)
                     // _ZdaPv -> operator delete[](void*)
                     if (FuncName == "free")
                         memOp = 4;
-                    else
+                    else if (FuncName.startswith("_gfortran_internal_free"))
+                        memOp = 9;
+                    else if (FuncName.startswith("_ZdlPv"))
                         memOp = 7;
+                    else if (FuncName.startswith("_ZdaPv"))
+                        memOp = 12;
 
                     Value *SizeArg = Call->getArgOperand(0);
 
@@ -209,13 +229,252 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     uint64_t size = DL.getTypeAllocSize(ptrType);
 
                     builder.CreateCall(LogNew, {builder.getInt64(size), builder.getInt64(0), builder.getInt64(memOp), SizeArg});
+
+                } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+
+                    IRBuilder<> builder(Context);
+
+                    std::string demangledName = demangle(FuncName.str().c_str());
+                    errs() << "1 Found function call: " << demangledName << "\n";
+
+                    if (Instruction *nextInst = Inst->getNextNode()) {
+                        builder.SetInsertPoint(nextInst);
+                        errs() << "1 Found function call get next node: " << demangledName << "\n";
+                    } else {
+                        // This is to solve MemoryManagerArrayImpl.cpp
+                        // memptr = new char[size];
+                        //   %call = invoke noalias nonnull i8* @_Znam(i64 %size) #9
+                        //   to label %if.then unwind label %invoke.cont3, !dbg !705, !heapallocsite !420
+                        // If callInst is the last instruction, insert before the terminator
+                        builder.SetInsertPoint(&(*i));
+                        errs() << "1 Found function call insert to end: " << demangledName << "\n";
+                    }
+
+                    if (DILocation *Loc = Inst->getDebugLoc()) {
+                      unsigned Line = Loc->getLine();
+                      unsigned Col = Loc->getColumn();
+                      StringRef File = Loc->getFilename();
+                      StringRef Dir = Loc->getDirectory();
+                      errs() << "Found new memory allocation (call): " << demangledName << " at "
+                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                    }
+
+
+                    /*
+
+
+                    IRBuilder<> builder(Inst->getParent());
+
+                    if (Instruction *nextInst = Inst->getNextNode()) {
+                        builder.SetInsertPoint(nextInst);
+                        errs() << "1 Found function call get next node: " << demangledName << "\n";
+                    } else {
+                        // If callInst is the last instruction, insert before the terminator
+                        builder.SetInsertPoint(bb->getTerminator());
+                        errs() << "1 Found function call insert to end: " << demangledName << "\n";
+
+                    }
+
+                    */
+
+
+                    // Get the return value (pointer to allocated memory)
+                    Value *returnValue = Inst;
+
+                    uint64_t ElementSize = 0;
+
+                    if ( FuncName.startswith("_Znam")){
+                        Value *SizeArg = Call->getArgOperand(0);
+                        //operator new char [](unsigned long)
+                        memOp = 6;
+                        ElementSize = 1;
+                        builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                    } else if (FuncName.startswith("_Znwm")) {
+                        // This is for Base64.cpp in xalanbmk
+                        // Avoid bug:
+                        // Instruction does not dominate all uses!
+                        // %call15 = invoke noalias nonnull dereferenceable(16) i8* @_Znwm(i64 16) #15
+                        // to label %invoke.cont14 unwind label %lpad13, !dbg !1265, !heapallocsite !265
+                        // call void @logNewAllocation(i64 0, i64 4, i64 5, i8* nonnull %call15), !dbg !1265
+                        // in function _ZNK11xercesc_2_711DOMNodeImpl13getChildNodesEv
+                        // fatal error: error in backend: Broken function found, compilation aborted!
+                        //operator new int
+                        memOp = 5;
+                        ElementSize = 4;
+
+                        if (Call->getNumArgOperands() == 0) {
+
+                            builder.CreateCall(LogNew, {builder.getInt64(1), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        } else {
+
+                            Value *SizeArg = Call->getArgOperand(0);
+                            builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        }
+
+                    } else if (FuncName.startswith("_Znaj")) {
+                        Value *SizeArg = Call->getArgOperand(0);
+                        //operator new int [](unsigned long)
+                        memOp = 11;
+                        ElementSize = 4;
+                        builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                    }
+
+
+                }
+            } else if (InvokeInst *invokeInst = dyn_cast<InvokeInst>(Inst)) {
+
+                Function *CalledFunc = invokeInst->getCalledFunction();
+
+                // Get the return value (pointer to allocated memory)
+                Value *returnValue = invokeInst;
+
+                if (!CalledFunc)
+                    continue;
+
+                StringRef FuncName = CalledFunc->getName();
+
+                if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+                    // 1) new(unsigned long)
+                    // 2) new[](unsigned long)
+                    // 3) new[](unsinged int)
+                    std::string demangledName = demangle(FuncName.str().c_str());
+                    errs() << "2 Found function call: " << demangledName << "\n";
+
+                    if (DILocation *Loc = Inst->getDebugLoc()) {
+                      unsigned Line = Loc->getLine();
+                      unsigned Col = Loc->getColumn();
+                      StringRef File = Loc->getFilename();
+                      StringRef Dir = Loc->getDirectory();
+                      errs() << "Found new memory allocation (call): " << demangledName << " at "
+                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                    }
+
+                    //IRBuilder<> builder(invokeInst->getNextNode());
+
+                    uint64_t ElementSize = 0;
+
+                    IRBuilder<> builder(Context);
+
+                    if (Instruction *nextInst = invokeInst->getNextNode()) {
+                        builder.SetInsertPoint(nextInst);
+                        errs() << "2 Found function call get next node: " << demangledName << "\n";
+                    } else {
+                        BasicBlock *currentBB = invokeInst->getParent();
+
+                        // If callInst is the last instruction, insert before the terminator
+                        //builder.SetInsertPoint(&(*i));
+                        errs() << "2 Found function call insert to end: " << demangledName << "\n";
+
+                        /*
+                        // Split the block
+                        BasicBlock *NewBB = bb->splitBasicBlock(invokeInst->getNextNode(), "instr_block");
+                        // Insert the instrumentation call at the beginning of the new block
+                        builder.SetInsertPoint(&*NewBB->getFirstInsertionPt());
+                        */
+
+                        errs() << "create a new block " << demangledName << "\n";
+
+
+                        for (auto *succ : successors(currentBB)) {
+                            BasicBlock *newBB = SplitEdge(currentBB, succ);
+
+                            // Insert the instrumentation call at the start of the new block
+                            IRBuilder<> builder(&newBB->front());
+
+                            if ( FuncName.startswith("_Znam")){
+                                Value *SizeArg = invokeInst->getArgOperand(0);
+                                //operator new char [](unsigned long)
+                                memOp = 6;
+                                ElementSize = 1;
+                                builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                            } else if (FuncName.startswith("_Znwm")) {
+                                //operator new int
+                                memOp = 5;
+                                ElementSize = 4;
+
+                                if (invokeInst->getNumArgOperands() == 0) {
+
+                                    builder.CreateCall(LogNew, {builder.getInt64(1), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                                } else {
+
+                                    Value *SizeArg = invokeInst->getArgOperand(0);
+                                    builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                                }
+                            }  else if (FuncName.startswith("_Znaj")) {
+                                Value *SizeArg = invokeInst->getArgOperand(0);
+                                //operator new int [](unsigned long)
+                                memOp = 11;
+                                ElementSize = 4;
+                                builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                            }
+
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    /*
+                    IRBuilder<> builder(Inst->getParent());
+
+                    if (Instruction *nextInst = invokeInst->getNextNode()) {
+                        builder.SetInsertPoint(nextInst);
+                        errs() << "2 Found function call get next node: " << demangledName << "\n";
+                    } else {
+                        // If callInst is the last instruction, insert before the terminator
+                        builder.SetInsertPoint(bb->getTerminator());
+                        errs() << "2 Found function call insert to end: " << demangledName << "\n";
+                    }
+                    */
+
+
+                    if ( FuncName.startswith("_Znam")){
+                        Value *SizeArg = invokeInst->getArgOperand(0);
+                        //operator new char [](unsigned long)
+                        memOp = 6;
+                        ElementSize = 1;
+                        builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                    } else if (FuncName.startswith("_Znwm")) {
+                        //operator new int
+                        memOp = 5;
+                        ElementSize = 4;
+
+                        if (invokeInst->getNumArgOperands() == 0) {
+
+                            builder.CreateCall(LogNew, {builder.getInt64(1), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        } else {
+
+                            Value *SizeArg = invokeInst->getArgOperand(0);
+                            builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        }
+
+
+                    } else if (FuncName.startswith("_Znaj")) {
+                        Value *SizeArg = invokeInst->getArgOperand(0);
+                        //operator new int [](unsigned long)
+                        memOp = 11;
+                        ElementSize = 4;
+                        builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                    }
+
+
+                    //if (SizeArg == nullptr)
+                    //    builder.CreateCall(LogNew, {builder.getInt64(0), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+                    //else
+                    //    builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                 }
             }
-            }
         }
+    }
 
-        return true;
-      }
+    return true;
+}
 
 char MemAllocAnalysis::ID = 0;
 
