@@ -42,6 +42,18 @@ cl::opt<bool> ClMemAllocAnalysis(
     cl::desc("Mem Alloc Analysis"),
     cl::init(true));
 */
+
+bool
+MemAllocAnalysis::containsOperatorNewInMiddle(const std::string& str, bool isNew) {
+    size_t pos;
+    if (isNew)
+        pos = str.find("operator new(");
+    else
+        pos = str.find("operator delete(");
+
+    return (pos != std::string::npos) && (pos != 0);
+}
+
 bool
 MemAllocAnalysis::runOnFunction(Function &F) {
     LLVMContext &Context = F.getContext();
@@ -73,7 +85,6 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
     const DataLayout &DL = F.getParent()->getDataLayout();
 
-
     /*
      * 1    malloc
      * 2    calloc
@@ -87,7 +98,12 @@ MemAllocAnalysis::runOnFunction(Function &F) {
      * 10   xalloc
      * 11   new [] int
      * 12   delete []
+     * 13   operator new
+     * 14   operator delete
      */
+
+    std::unordered_set<Instruction *> instDone;
+
     uint64_t memOp = 0;
 
     for (Function::iterator bb= F.begin(), bbe= F.end(); bb != bbe; ++bb) {
@@ -105,16 +121,6 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                 if (PrevInst) {
                     if ( auto *Call = dyn_cast<CallInst>(PrevInst)) {
 
-                        /*
-                        if (DILocation *Loc = PrevInst->getDebugLoc()) {
-                            unsigned Line = Loc->getLine();
-                            StringRef File = Loc->getFilename();
-                            StringRef Dir = Loc->getDirectory();
-                            errs() << "check allocation at " << Dir << "/" << File << ":" << Line << "\n";
-                        }
-                        */
-
-
                         Function *CalledFunc = Call->getCalledFunction();
 
                         if (!CalledFunc)
@@ -125,8 +131,21 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         Value *funcRet = Call;
 
 
-                        //std::string demangledName = demangle(FuncName.str().c_str());
-                        //errs() << "Found function call: " << demangledName << "\n";
+                        errs() << "bit cast previous node 0----" << "\n";
+                        std::string demangledName = demangle(FuncName.str().c_str());
+                        errs() << "bit cast previous node 0 Found invoke function call: " << demangledName << "\n";
+
+                        if (DILocation *Loc = Inst->getDebugLoc()) {
+                          unsigned Line = Loc->getLine();
+                          unsigned Col = Loc->getColumn();
+                          StringRef File = Loc->getFilename();
+                          StringRef Dir = Loc->getDirectory();
+                          errs() << "0 Found invoke function call: " << demangledName << " at "
+                                 << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                        }
+
+                        if (instDone.count(PrevInst) != 0)
+                            continue;
 
                         if (FuncName.equals("malloc") || FuncName.equals("calloc") || FuncName.equals("xmalloc")
                             || FuncName.startswith("_gfortran_internal_malloc")) {
@@ -161,6 +180,8 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                     builder.CreateCall(LogNew, {Arg0, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
                                 }
 
+                                instDone.insert(PrevInst);
+
                             }
                         } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
 
@@ -183,6 +204,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                 }
 
                                 builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), funcRet});
+                                instDone.insert(PrevInst);
                             }
                         }
                     }
@@ -198,6 +220,9 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                 }
                 */
 
+                if (instDone.count(Inst) != 0)
+                    continue;
+
                 Function *CalledFunc = Call->getCalledFunction();
 
                 if (!CalledFunc)
@@ -205,14 +230,44 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                 StringRef FuncName = CalledFunc->getName();
 
+                errs() << "1----" << "\n";
+                std::string demangledName = demangle(FuncName.str().c_str());
+                errs() << "1 Found pure function call: " << demangledName << "\n";
 
-                if (FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free" || FuncName.startswith("_gfortran_internal_free")) {
+                if (DILocation *Loc = Inst->getDebugLoc()) {
+                  unsigned Line = Loc->getLine();
+                  unsigned Col = Loc->getColumn();
+                  StringRef File = Loc->getFilename();
+                  StringRef Dir = Loc->getDirectory();
+                  errs() << "1 Found pure function call: " << demangledName << " at "
+                         << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                }
+
+                bool isOperatorDelete = false;
+
+                if ( containsOperatorNewInMiddle(demangledName,false)) {
+                    isOperatorDelete = true;
+                    errs() << "1 Found pure diy delete: " << demangledName << "\n";
+                    Inst->print(errs());
+                }
+
+                bool isOperatorNew = false;
+                if ( containsOperatorNewInMiddle(demangledName,true)) {
+                    isOperatorNew = true;
+                    errs() << "1 Found pure diy new: " << demangledName << "\n";
+                    Inst->print(errs());
+                }
+
+                if (isOperatorDelete || FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free" || FuncName.startswith("_gfortran_internal_free")) {
 
                     IRBuilder<> builder(Inst);
 
+                    // operator delete
+                    if (isOperatorDelete)
+                        memOp = 14;
                     // _ZdlPv -> operator delete(void*)
                     // _ZdaPv -> operator delete[](void*)
-                    if (FuncName == "free")
+                    else if (FuncName == "free")
                         memOp = 4;
                     else if (FuncName.startswith("_gfortran_internal_free"))
                         memOp = 9;
@@ -230,12 +285,10 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                     builder.CreateCall(LogNew, {builder.getInt64(size), builder.getInt64(0), builder.getInt64(memOp), SizeArg});
 
-                } else if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+                    instDone.insert(Inst);
+                } else if (isOperatorNew || FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
 
                     IRBuilder<> builder(Context);
-
-                    std::string demangledName = demangle(FuncName.str().c_str());
-                    errs() << "1 Found function call: " << demangledName << "\n";
 
                     if (Instruction *nextInst = Inst->getNextNode()) {
                         builder.SetInsertPoint(nextInst);
@@ -259,31 +312,28 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                              << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
                     }
 
-
-                    /*
-
-
-                    IRBuilder<> builder(Inst->getParent());
-
-                    if (Instruction *nextInst = Inst->getNextNode()) {
-                        builder.SetInsertPoint(nextInst);
-                        errs() << "1 Found function call get next node: " << demangledName << "\n";
-                    } else {
-                        // If callInst is the last instruction, insert before the terminator
-                        builder.SetInsertPoint(bb->getTerminator());
-                        errs() << "1 Found function call insert to end: " << demangledName << "\n";
-
-                    }
-
-                    */
-
-
                     // Get the return value (pointer to allocated memory)
                     Value *returnValue = Inst;
 
                     uint64_t ElementSize = 0;
 
-                    if ( FuncName.startswith("_Znam")){
+                    if (isOperatorNew) {
+                        memOp = 13;
+
+                        ElementSize = 4;
+
+                        if (Call->getNumArgOperands() == 0) {
+
+                            builder.CreateCall(LogNew, {builder.getInt64(1), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        } else {
+
+                            Value *SizeArg = Call->getArgOperand(0);
+                            builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        }
+
+                    } else if ( FuncName.startswith("_Znam")){
                         Value *SizeArg = Call->getArgOperand(0);
                         //operator new char [](unsigned long)
                         memOp = 6;
@@ -321,8 +371,9 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                     }
 
-
+                    instDone.insert(Inst);
                 }
+
             } else if (InvokeInst *invokeInst = dyn_cast<InvokeInst>(Inst)) {
 
                 Function *CalledFunc = invokeInst->getCalledFunction();
@@ -335,25 +386,44 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                 StringRef FuncName = CalledFunc->getName();
 
-                if (FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+                errs() << "2----" << "\n";
+                std::string demangledName = demangle(FuncName.str().c_str());
+                errs() << "2 Found invoke function call: " << demangledName << "\n";
+
+                if (DILocation *Loc = Inst->getDebugLoc()) {
+                  unsigned Line = Loc->getLine();
+                  unsigned Col = Loc->getColumn();
+                  StringRef File = Loc->getFilename();
+                  StringRef Dir = Loc->getDirectory();
+                  errs() << "2 Found invoke function call: " << demangledName << " at "
+                         << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                }
+
+                bool isOperatorNew = false;
+                if ( containsOperatorNewInMiddle(demangledName,true)) {
+                    isOperatorNew = true;
+                    errs() << "1 Found pure diy new: " << demangledName << "\n";
+                    Inst->print(errs());
+                }
+
+                if (instDone.count(Inst) != 0 )
+                    continue;
+
+                if (isOperatorNew || FuncName.startswith("_Znwm") || FuncName.startswith("_Znam") || FuncName.startswith("_Znaj")) {
+
+                    if (instDone.count(Inst) != 0)
+                        continue;
+
+                    instDone.insert(Inst);
+
                     // 1) new(unsigned long)
                     // 2) new[](unsigned long)
                     // 3) new[](unsinged int)
-                    std::string demangledName = demangle(FuncName.str().c_str());
-                    errs() << "2 Found function call: " << demangledName << "\n";
-
-                    if (DILocation *Loc = Inst->getDebugLoc()) {
-                      unsigned Line = Loc->getLine();
-                      unsigned Col = Loc->getColumn();
-                      StringRef File = Loc->getFilename();
-                      StringRef Dir = Loc->getDirectory();
-                      errs() << "Found new memory allocation (call): " << demangledName << " at "
-                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
-                    }
 
                     //IRBuilder<> builder(invokeInst->getNextNode());
 
                     uint64_t ElementSize = 0;
+
 
                     IRBuilder<> builder(Context);
 
@@ -367,14 +437,6 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         //builder.SetInsertPoint(&(*i));
                         errs() << "2 Found function call insert to end: " << demangledName << "\n";
 
-                        /*
-                        // Split the block
-                        BasicBlock *NewBB = bb->splitBasicBlock(invokeInst->getNextNode(), "instr_block");
-                        // Insert the instrumentation call at the beginning of the new block
-                        builder.SetInsertPoint(&*NewBB->getFirstInsertionPt());
-                        */
-
-                        errs() << "create a new block " << demangledName << "\n";
 
 
                         for (auto *succ : successors(currentBB)) {
@@ -382,6 +444,8 @@ MemAllocAnalysis::runOnFunction(Function &F) {
 
                             // Insert the instrumentation call at the start of the new block
                             IRBuilder<> builder(&newBB->front());
+
+                            errs() << "create a new block " << demangledName << "\n";
 
                             if ( FuncName.startswith("_Znam")){
                                 Value *SizeArg = invokeInst->getArgOperand(0);
@@ -418,21 +482,22 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         continue;
                     }
 
-                    /*
-                    IRBuilder<> builder(Inst->getParent());
+                    if (isOperatorNew) {
+                        memOp = 13;
 
-                    if (Instruction *nextInst = invokeInst->getNextNode()) {
-                        builder.SetInsertPoint(nextInst);
-                        errs() << "2 Found function call get next node: " << demangledName << "\n";
-                    } else {
-                        // If callInst is the last instruction, insert before the terminator
-                        builder.SetInsertPoint(bb->getTerminator());
-                        errs() << "2 Found function call insert to end: " << demangledName << "\n";
-                    }
-                    */
+                        ElementSize = 4;
 
+                        if (Call->getNumArgOperands() == 0) {
 
-                    if ( FuncName.startswith("_Znam")){
+                            builder.CreateCall(LogNew, {builder.getInt64(1), builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        } else {
+
+                            Value *SizeArg = Call->getArgOperand(0);
+                            builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
+
+                        }
+                    } else if ( FuncName.startswith("_Znam")){
                         Value *SizeArg = invokeInst->getArgOperand(0);
                         //operator new char [](unsigned long)
                         memOp = 6;
@@ -472,7 +537,6 @@ MemAllocAnalysis::runOnFunction(Function &F) {
             }
         }
     }
-
     return true;
 }
 

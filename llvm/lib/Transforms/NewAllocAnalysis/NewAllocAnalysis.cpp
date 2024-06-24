@@ -98,7 +98,89 @@ struct NewAllocAnalysis : public FunctionPass {
 
             //errs() << "Instruction: " << *Inst << "\n";
 
-            if (auto *BitCast = dyn_cast<BitCastInst>(Inst)) {
+            if (StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
+                errs() << "--------------------------------------------------" << "\n";
+                Value *ValOp = SI->getValueOperand();
+                Inst->print(errs());
+                errs() << "\n";
+
+                Value *PointerOperand = SI->getPointerOperand();
+
+                // Handle the bitcast case
+                if (auto *BC = dyn_cast<BitCastInst>(PointerOperand)) {
+                  PointerOperand = BC->getOperand(0);
+                }
+
+                // Get the type of the pointer operand
+                Type *PointerType = PointerOperand->getType();
+                if (PointerType->isPointerTy()) {
+                    Type *InnerPointerType = PointerType->getPointerElementType();
+
+                    // Print the base type
+                    std::string TypeName;
+                    raw_string_ostream RSO(TypeName);
+                    InnerPointerType->print(RSO);
+                    errs() << "---- Pointer type: " << RSO.str() << "\n";
+                    uint64_t SizeInBytes = DL.getTypeAllocSize(InnerPointerType);
+                    errs() << "---- Size of pointer object: " << SizeInBytes << " bytes\n";
+
+
+
+                    if (InnerPointerType->isPointerTy()) {
+                        Type *BaseType = InnerPointerType->getPointerElementType();
+
+                        // Print the base type
+                        std::string TypeName;
+                        raw_string_ostream RSO(TypeName);
+                        BaseType->print(RSO);
+                        errs() << "---- Base type: " << RSO.str() << "\n";
+                        uint64_t SizeInBytes = DL.getTypeAllocSize(BaseType);
+                        errs() << "---- Size of pointed object: " << SizeInBytes << " bytes\n";
+                    }
+                }
+
+                // Handle the GEP case
+                if (auto *GEP = dyn_cast<GetElementPtrInst>(PointerOperand)) {
+                    Type *PointedType = GEP->getSourceElementType();
+                    uint64_t SizeInBytes = DL.getTypeAllocSize(PointedType);
+                    errs() << "Size of pointed object: " << SizeInBytes << " bytes\n";
+
+
+                    // Check if it's a global variable to potentially get the class name
+                    if (auto *GV = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
+                        if (GV->hasName()) {
+                            StringRef Name = GV->getName();
+                            std::string DemangledName = llvm::demangle(Name.str());
+                            errs() << "Pointed object name: " << DemangledName << "\n";
+                        }
+                    } else {
+                        // If not a global variable, try to get the type name
+                        if (PointerOperand->getType()->isPointerTy()) {
+                          Type *BaseType = PointerOperand->getType()->getPointerElementType();
+                          std::string TypeName;
+                          raw_string_ostream RSO(TypeName);
+                          BaseType->print(RSO);
+                          errs() << "Pointed type: " << RSO.str() << "\n";
+                        }
+                    }
+
+                }
+
+                if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(ValOp)) {
+                    if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
+                        Inst->print(errs());
+                        errs() << "Found global variable: " << GV->getName() << "\n";
+                        if (DILocation *Loc = Inst->getDebugLoc()) {
+                          unsigned Line = Loc->getLine();
+                          unsigned Col = Loc->getColumn();
+                          StringRef File = Loc->getFilename();
+                          StringRef Dir = Loc->getDirectory();
+                          errs() << "Print Code: " << GV->getName() << " at "
+                                 << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                        }
+                    }
+                }
+            } else if (auto *BitCast = dyn_cast<BitCastInst>(Inst)) {
 
                 IRBuilder<> builder(Inst);
 
@@ -113,12 +195,14 @@ struct NewAllocAnalysis : public FunctionPass {
                             continue;
 
                         StringRef FuncName = CalledFunc->getName();
+                        std::string demangledName = demangle(FuncName.str().c_str());
+
                         Type *DestType = BitCast->getDestTy();
                         Value *funcRet = Call;
 
-
+                        bool printNode0 = false;
+                        if (printNode0) {
                         errs() << "bit cast previous node 0----" << "\n";
-                        std::string demangledName = demangle(FuncName.str().c_str());
                         errs() << "bit cast previous node 0 Found invoke function call: " << demangledName << "\n";
 
                         if (DILocation *Loc = Inst->getDebugLoc()) {
@@ -128,6 +212,7 @@ struct NewAllocAnalysis : public FunctionPass {
                           StringRef Dir = Loc->getDirectory();
                           errs() << "0 Found invoke function call: " << demangledName << " at "
                                  << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                        }
                         }
 
                         if (instDone.count(PrevInst) != 0)
@@ -197,15 +282,6 @@ struct NewAllocAnalysis : public FunctionPass {
                 }
             } else if (auto *Call = dyn_cast<CallInst>(Inst)) {
 
-                /*
-                if (DILocation *Loc = Inst->getDebugLoc()) {
-                    unsigned Line = Loc->getLine();
-                    StringRef File = Loc->getFilename();
-                    StringRef Dir = Loc->getDirectory();
-                    errs() << "check deallocation at " << Dir << "/" << File << ":" << Line << "\n";
-                }
-                */
-
                 if (instDone.count(Inst) != 0)
                     continue;
 
@@ -215,33 +291,36 @@ struct NewAllocAnalysis : public FunctionPass {
                     continue;
 
                 StringRef FuncName = CalledFunc->getName();
+                    std::string demangledName = demangle(FuncName.str().c_str());
 
-                errs() << "1----" << "\n";
-                std::string demangledName = demangle(FuncName.str().c_str());
-                errs() << "1 Found pure function call: " << demangledName << "\n";
+                bool printNode1 = false;
+                if (printNode1) {
+                    errs() << "1----" << "\n";
+                    errs() << "1 Found pure function call: " << demangledName << "\n";
 
-                if (DILocation *Loc = Inst->getDebugLoc()) {
-                  unsigned Line = Loc->getLine();
-                  unsigned Col = Loc->getColumn();
-                  StringRef File = Loc->getFilename();
-                  StringRef Dir = Loc->getDirectory();
-                  errs() << "1 Found pure function call: " << demangledName << " at "
-                         << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                    if (DILocation *Loc = Inst->getDebugLoc()) {
+                      unsigned Line = Loc->getLine();
+                      unsigned Col = Loc->getColumn();
+                      StringRef File = Loc->getFilename();
+                      StringRef Dir = Loc->getDirectory();
+                      errs() << "1 Found pure function call: " << demangledName << " at "
+                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                    }
                 }
 
                 bool isOperatorDelete = false;
 
                 if ( containsOperatorNewInMiddle(demangledName,false)) {
                     isOperatorDelete = true;
-                    errs() << "1 Found pure diy delete: " << demangledName << "\n";
-                    Inst->print(errs());
+                    //errs() << "1 Found pure diy delete: " << demangledName << "\n";
+                    //Inst->print(errs());
                 }
 
                 bool isOperatorNew = false;
                 if ( containsOperatorNewInMiddle(demangledName,true)) {
                     isOperatorNew = true;
-                    errs() << "1 Found pure diy new: " << demangledName << "\n";
-                    Inst->print(errs());
+                    //errs() << "1 Found pure diy new: " << demangledName << "\n";
+                    //Inst->print(errs());
                 }
 
                 if (isOperatorDelete || FuncName.startswith("_ZdlPv") || FuncName.startswith("_ZdaPv") || FuncName == "free" || FuncName.startswith("_gfortran_internal_free")) {
@@ -278,7 +357,7 @@ struct NewAllocAnalysis : public FunctionPass {
 
                     if (Instruction *nextInst = Inst->getNextNode()) {
                         builder.SetInsertPoint(nextInst);
-                        errs() << "1 Found function call get next node: " << demangledName << "\n";
+                        //errs() << "1 Found function call get next node: " << demangledName << "\n";
                     } else {
                         // This is to solve MemoryManagerArrayImpl.cpp
                         // memptr = new char[size];
@@ -286,7 +365,7 @@ struct NewAllocAnalysis : public FunctionPass {
                         //   to label %if.then unwind label %invoke.cont3, !dbg !705, !heapallocsite !420
                         // If callInst is the last instruction, insert before the terminator
                         builder.SetInsertPoint(&(*i));
-                        errs() << "1 Found function call insert to end: " << demangledName << "\n";
+                        //errs() << "1 Found function call insert to end: " << demangledName << "\n";
                     }
 
                     if (DILocation *Loc = Inst->getDebugLoc()) {
@@ -294,8 +373,8 @@ struct NewAllocAnalysis : public FunctionPass {
                       unsigned Col = Loc->getColumn();
                       StringRef File = Loc->getFilename();
                       StringRef Dir = Loc->getDirectory();
-                      errs() << "Found new memory allocation (call): " << demangledName << " at "
-                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                      //errs() << "Found new memory allocation (call): " << demangledName << " at "
+                      //       << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
                     }
 
                     // Get the return value (pointer to allocated memory)
@@ -371,25 +450,28 @@ struct NewAllocAnalysis : public FunctionPass {
                     continue;
 
                 StringRef FuncName = CalledFunc->getName();
-
-                errs() << "2----" << "\n";
                 std::string demangledName = demangle(FuncName.str().c_str());
-                errs() << "2 Found invoke function call: " << demangledName << "\n";
 
-                if (DILocation *Loc = Inst->getDebugLoc()) {
-                  unsigned Line = Loc->getLine();
-                  unsigned Col = Loc->getColumn();
-                  StringRef File = Loc->getFilename();
-                  StringRef Dir = Loc->getDirectory();
-                  errs() << "2 Found invoke function call: " << demangledName << " at "
-                         << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                bool printNode2 = false;
+                if (printNode2) {
+                    errs() << "2----" << "\n";
+                    errs() << "2 Found invoke function call: " << demangledName << "\n";
+
+                    if (DILocation *Loc = Inst->getDebugLoc()) {
+                      unsigned Line = Loc->getLine();
+                      unsigned Col = Loc->getColumn();
+                      StringRef File = Loc->getFilename();
+                      StringRef Dir = Loc->getDirectory();
+                      errs() << "2 Found invoke function call: " << demangledName << " at "
+                             << Dir << "/" << File << ":" << Line << ":" << Col << "\n";
+                    }
                 }
 
                 bool isOperatorNew = false;
                 if ( containsOperatorNewInMiddle(demangledName,true)) {
                     isOperatorNew = true;
-                    errs() << "1 Found pure diy new: " << demangledName << "\n";
-                    Inst->print(errs());
+                    //errs() << "2 Found pure diy new: " << demangledName << "\n";
+                    //Inst->print(errs());
                 }
 
                 if (instDone.count(Inst) != 0 )
@@ -415,15 +497,13 @@ struct NewAllocAnalysis : public FunctionPass {
 
                     if (Instruction *nextInst = invokeInst->getNextNode()) {
                         builder.SetInsertPoint(nextInst);
-                        errs() << "2 Found function call get next node: " << demangledName << "\n";
+                        //errs() << "2 Found function call get next node: " << demangledName << "\n";
                     } else {
                         BasicBlock *currentBB = invokeInst->getParent();
 
                         // If callInst is the last instruction, insert before the terminator
                         //builder.SetInsertPoint(&(*i));
-                        errs() << "2 Found function call insert to end: " << demangledName << "\n";
-
-
+                        //errs() << "2 Found function call insert to end: " << demangledName << "\n";
 
                         for (auto *succ : successors(currentBB)) {
                             BasicBlock *newBB = SplitEdge(currentBB, succ);
@@ -431,7 +511,7 @@ struct NewAllocAnalysis : public FunctionPass {
                             // Insert the instrumentation call at the start of the new block
                             IRBuilder<> builder(&newBB->front());
 
-                            errs() << "create a new block " << demangledName << "\n";
+                            //errs() << "create a new block " << demangledName << "\n";
 
                             if ( FuncName.startswith("_Znam")){
                                 Value *SizeArg = invokeInst->getArgOperand(0);

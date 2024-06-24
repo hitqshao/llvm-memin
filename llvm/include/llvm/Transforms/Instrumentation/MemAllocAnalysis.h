@@ -42,6 +42,8 @@ public:
   static bool isRequired() { return true; }
 
   bool runOnFunction(Function &F) override;
+
+  bool containsOperatorNewInMiddle(const std::string& str, bool isNew);
 };
 
 // Insert MemAlloc instrumentation
