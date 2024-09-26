@@ -141,10 +141,15 @@ struct NewAllocAnalysis : public FunctionPass {
 
                 // Handle the GEP case
                 if (auto *GEP = dyn_cast<GetElementPtrInst>(PointerOperand)) {
+                    IRBuilder<> builder(GEP);
+
                     Type *PointedType = GEP->getSourceElementType();
                     uint64_t SizeInBytes = DL.getTypeAllocSize(PointedType);
-                    errs() << "Size of pointed object: " << SizeInBytes << " bytes\n";
 
+                    // Cast the GEP result to i8* (void*)
+                    Value *GEPAddr = builder.CreateBitCast(GEP, Type::getInt8PtrTy(Context));
+
+                    errs() << "Case Store GEP: " <<  GEPAddr << " Size of pointed object: " <<  SizeInBytes << " bytes\n";
 
                     // Check if it's a global variable to potentially get the class name
                     if (auto *GV = dyn_cast<GlobalVariable>(GEP->getPointerOperand())) {
@@ -600,6 +605,17 @@ struct NewAllocAnalysis : public FunctionPass {
                     //else
                     //    builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                 }
+            } else if (auto *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
+                IRBuilder<> builder(GEP);
+
+                // Cast the GEP result to i8* (void*)
+                Value *GEPAddr = builder.CreateBitCast(GEP, Type::getInt8PtrTy(Context));
+
+                // Get the size of the type pointed to by the GEP
+                Type *ElementType = GEP->getType()->getPointerElementType();
+                uint64_t SizeInBytes = DL.getTypeAllocSize(ElementType);
+
+                errs() << "Case GEP: " << GEPAddr << " Size of pointed object: " <<   SizeInBytes << " bytes\n";
             }
         }
     }

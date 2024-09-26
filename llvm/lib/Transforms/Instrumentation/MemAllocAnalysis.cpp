@@ -320,7 +320,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     if (isOperatorNew) {
                         memOp = 13;
 
-                        ElementSize = 4;
+                        ElementSize = 1;
 
                         if (Call->getNumArgOperands() == 0) {
 
@@ -350,7 +350,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         // fatal error: error in backend: Broken function found, compilation aborted!
                         //operator new int
                         memOp = 5;
-                        ElementSize = 4;
+                        ElementSize = 1;
 
                         if (Call->getNumArgOperands() == 0) {
 
@@ -367,7 +367,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         Value *SizeArg = Call->getArgOperand(0);
                         //operator new int [](unsigned long)
                         memOp = 11;
-                        ElementSize = 4;
+                        ElementSize = 1;
                         builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                     }
 
@@ -456,7 +456,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                             } else if (FuncName.startswith("_Znwm")) {
                                 //operator new int
                                 memOp = 5;
-                                ElementSize = 4;
+                                ElementSize = 1;
 
                                 if (invokeInst->getNumArgOperands() == 0) {
 
@@ -472,7 +472,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                                 Value *SizeArg = invokeInst->getArgOperand(0);
                                 //operator new int [](unsigned long)
                                 memOp = 11;
-                                ElementSize = 4;
+                                ElementSize = 1;
                                 builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                             }
 
@@ -485,7 +485,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     if (isOperatorNew) {
                         memOp = 13;
 
-                        ElementSize = 4;
+                        ElementSize = 1;
 
                         if (Call->getNumArgOperands() == 0) {
 
@@ -506,7 +506,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                     } else if (FuncName.startswith("_Znwm")) {
                         //operator new int
                         memOp = 5;
-                        ElementSize = 4;
+                        ElementSize = 1;
 
                         if (invokeInst->getNumArgOperands() == 0) {
 
@@ -524,7 +524,7 @@ MemAllocAnalysis::runOnFunction(Function &F) {
                         Value *SizeArg = invokeInst->getArgOperand(0);
                         //operator new int [](unsigned long)
                         memOp = 11;
-                        ElementSize = 4;
+                        ElementSize = 1;
                         builder.CreateCall(LogNew, {SizeArg, builder.getInt64(ElementSize), builder.getInt64(memOp), returnValue});
                     }
 
